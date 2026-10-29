@@ -7,6 +7,7 @@ Then open http://127.0.0.1:8000
 The dictionary is stored next to this file as ``dictionary.json`` so the work
 survives restarts and is shared by every browser that opens the app.
 """
+import boto3
 import json
 import os
 import threading
@@ -15,16 +16,36 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from botocore.exceptions import ClientError
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from mapper import decode_srt, map_words
+from dotenv import load_dotenv
+load_dotenv()  # Must be before boto3 client creation
+
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 STORE = BASE_DIR / "dictionary.json"
+
+# --- R2 config -----------------------------------------------------------
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
+R2_BUCKET = os.getenv("R2_BUCKET_NAME")
+R2_KEY = os.getenv("R2_OBJECT_KEY", "dictionary.json")
+USE_R2 = bool(R2_ACCOUNT_ID and R2_BUCKET)
+
+s3 = None
+if USE_R2:
+    s3 = boto3.client(
+        service_name="s3",
+        endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+        aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
+        region_name="auto",
+    )
 
 MAX_FILE_BYTES = 10 * 1024 * 1024      # 10 MB per subtitle file
 MAX_ENTRIES = 200_000                  # dictionary entries
@@ -43,10 +64,27 @@ def _now() -> str:
 # Dictionary store
 # --------------------------------------------------------------------------
 def _load_store() -> tuple[list[dict], str | None]:
-    """Return (entries, savedAt) from disk. A missing or broken file is empty."""
+    """Return (entries, savedAt). A missing or broken source is empty."""
+    if USE_R2:
+        try:
+            obj = s3.get_object(Bucket=R2_BUCKET, Key=R2_KEY)
+            raw = obj["Body"].read()
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            if code in ("NoSuchKey", "404"):
+                return [], None
+            raise
+        except OSError:
+            return [], None
+    else:
+        try:
+            raw = STORE.read_bytes()
+        except (FileNotFoundError, OSError):
+            return [], None
+
     try:
-        data = json.loads(STORE.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        data = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return [], None
     if not isinstance(data, dict):
         return [], None
@@ -57,11 +95,21 @@ def _load_store() -> tuple[list[dict], str | None]:
 
 
 def _write_store(entries: list[dict], saved_at: str) -> None:
-    """Write atomically so a crash never leaves a half-written dictionary."""
-    tmp = STORE.with_suffix(".tmp")
     payload = {"version": 1, "savedAt": saved_at, "entries": entries}
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, STORE)
+    body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+
+    if USE_R2:
+        # R2 PUT is atomic at the object level — no tmp-file dance needed.
+        s3.put_object(
+            Bucket=R2_BUCKET,
+            Key=R2_KEY,
+            Body=body,
+            ContentType="application/json",
+        )
+    else:
+        tmp = STORE.with_suffix(".tmp")
+        tmp.write_bytes(body)
+        os.replace(tmp, STORE)
 
 
 def _as_dict(model: BaseModel) -> dict:
@@ -174,5 +222,11 @@ def put_dictionary(payload: DictionaryPayload):
 @app.delete("/api/dictionary")
 def clear_dictionary():
     with _lock:
-        STORE.unlink(missing_ok=True)
+        if USE_R2:
+            try:
+                s3.delete_object(Bucket=R2_BUCKET, Key=R2_KEY)
+            except ClientError:
+                pass
+        else:
+            STORE.unlink(missing_ok=True)
     return {"count": 0, "savedAt": None}

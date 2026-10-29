@@ -7,3 +7,5 @@ venv/
 # Runtime dictionary data (delete this line if you want to version your list)
 dictionary.json
 dictionary.tmp
+
+.env
