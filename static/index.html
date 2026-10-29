@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dictionary Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f6e6e'/%3E%3Ctext x='50' y='50' dy='.36em' text-anchor='middle' font-size='62' fill='white'%3E%E0%A8%AA%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Noto+Sans+Gurmukhi:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">ਪ</span>
+        <div class="brand-text">
+          <h1>Dictionary Studio</h1>
+          <p>Build a Punjabi word dictionary from subtitle pairs, then edit and export it in one place.</p>
+        </div>
+      </div>
+
+      <nav class="tabs" role="tablist" aria-label="Tools">
+        <button type="button" role="tab" id="tab-map" aria-controls="panel-map" aria-selected="true">Map subtitles</button>
+        <button type="button" role="tab" id="tab-dict" aria-controls="panel-dict" aria-selected="false" tabindex="-1">
+          Dictionary <span class="badge" id="dict-badge">0</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- ================= Map subtitles ================= -->
+    <section id="panel-map" role="tabpanel" aria-labelledby="tab-map">
+      <div class="lead">
+        <h2>Roman SRT dictionary builder</h2>
+        <p>Upload matching native-script and Roman <code>.srt</code> files. Words are paired cue by cue when both
+          cues contain the same number of words, then the result can be sent straight to the dictionary.</p>
+      </div>
+
+      <section class="pair" aria-label="Subtitle files">
+        <label class="drop" id="drop-native" for="file-native">
+          <span class="drop-title">Native words SRT</span>
+          <span class="drop-hint" id="hint-native">Drop a file here or click to choose</span>
+          <input type="file" id="file-native" accept=".srt" hidden>
+        </label>
+        <label class="drop" id="drop-roman" for="file-roman">
+          <span class="drop-title">Roman words SRT</span>
+          <span class="drop-hint" id="hint-roman">Drop a file here or click to choose</span>
+          <input type="file" id="file-roman" accept=".srt" hidden>
+        </label>
+      </section>
+
+      <div class="actions">
+        <button type="button" id="generate" class="btn primary" disabled>Generate mapping</button>
+        <p id="map-status" class="status" role="status" aria-live="polite">Choose both .srt files to continue.</p>
+      </div>
+
+      <section id="result" class="result" hidden>
+        <div class="result-bar">
+          <h2 id="result-title">Mapping</h2>
+          <div class="result-actions">
+            <button type="button" id="send-dict" class="btn primary">Add to dictionary</button>
+            <button type="button" id="map-copy" class="btn">Copy JSON</button>
+            <button type="button" id="map-download" class="btn">Download JSON</button>
+          </div>
+        </div>
+
+        <div class="tabs subtle" role="tablist" aria-label="Mapping view">
+          <button type="button" role="tab" id="tab-map-table" aria-selected="true" aria-controls="panel-map-table">Searchable table</button>
+          <button type="button" role="tab" id="tab-map-json" aria-selected="false" aria-controls="panel-map-json" tabindex="-1">Raw JSON</button>
+        </div>
+
+        <div id="panel-map-table" role="tabpanel" aria-labelledby="tab-map-table">
+          <input type="search" id="map-search" class="search" placeholder="Search native or Roman words" aria-label="Search mapped words">
+          <div class="table-foot">
+            <p id="map-note" class="note"></p>
+            <button type="button" id="map-more" class="btn small" hidden>Show more</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th scope="col">Native word</th><th scope="col">Roman word</th></tr></thead>
+              <tbody id="map-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="panel-map-json" role="tabpanel" aria-labelledby="tab-map-json" hidden>
+          <pre id="map-json" class="json-view"></pre>
+        </div>
+      </section>
+    </section>
+
+    <!-- ================= Dictionary ================= -->
+    <section id="panel-dict" role="tabpanel" aria-labelledby="tab-dict" hidden>
+      <div class="lead">
+        <h2>Dictionary editor</h2>
+        <p>Add native word → Roman word pairs. Duplicate keys and duplicate Roman values are blocked. Everything is
+          saved on the server as you type, and you can export the dictionary as JSON, Excel, Word, CSV and more.</p>
+      </div>
+
+      <div class="card">
+        <div class="grid-3">
+          <label class="field">
+            <span>Native word (key)</span>
+            <input id="key" placeholder="Native word" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="field">
+            <span>Roman word (value)</span>
+            <input id="value" placeholder="Roman word" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="field narrow">
+            <span>Type</span>
+            <select id="type">
+              <option value="string">String</option>
+              <option value="number">Number</option>
+              <option value="boolean">Boolean</option>
+              <option value="null">Null</option>
+              <option value="json">JSON</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="button" id="add" class="btn primary">Add pair</button>
+          <button type="button" id="dups" class="btn">Find duplicate keys</button>
+          <button type="button" id="clear" class="btn danger">Clear all</button>
+          <p id="form-msg" class="status" role="status" aria-live="polite"></p>
+        </div>
+        <p id="save-status" class="save-status" role="status" aria-live="polite">Loading the saved dictionary…</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Entries (<span id="count">0</span>)</h3>
+          <input type="search" id="q" class="search small" placeholder="Search key, value or type" aria-label="Search entries">
+        </div>
+        <div class="table-foot">
+          <p id="dict-note" class="note" hidden></p>
+          <button type="button" id="dict-more" class="btn small" hidden>Show more</button>
+        </div>
+        <p id="empty" class="note">No entries yet.</p>
+        <div class="table-wrap">
+          <table class="dict-table">
+            <thead>
+              <tr>
+                <th scope="col" class="num">#</th>
+                <th scope="col">Native word</th>
+                <th scope="col">Roman word</th>
+                <th scope="col" class="type-col">Type</th>
+                <th scope="col" class="actions-col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="dict-rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Export</h3>
+          <div class="export-controls">
+            <input id="filename" value="dictionary.json" aria-label="File name" autocomplete="off">
+            <select id="format" aria-label="Download format">
+              <option value="json">JSON (.json)</option>
+              <option value="xlsx">Excel (.xlsx)</option>
+              <option value="docx">Word (.docx)</option>
+              <option value="csv">CSV (.csv)</option>
+              <option value="tsv">TSV (.tsv)</option>
+              <option value="txt">Text (.txt)</option>
+              <option value="md">Markdown (.md)</option>
+              <option value="html">Web page (.html)</option>
+              <option value="xml">XML (.xml)</option>
+            </select>
+            <button type="button" id="copy-json" class="btn">Copy</button>
+            <button type="button" id="dict-download" class="btn primary">Download</button>
+          </div>
+        </div>
+        <pre id="preview" class="json-view">{}</pre>
+        <label class="import">
+          <span>Load JSON file(s). New entries are merged in only after you review them.</span>
+          <input type="file" id="load" accept=".json,application/json" multiple>
+        </label>
+      </div>
+    </section>
+
+    <footer class="footer">Developed by Punjab Team. Made with Love ❤️</footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h3 id="modal-title"></h3>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button type="button" id="modal-no" class="btn">Cancel</button>
+        <button type="button" id="modal-yes" class="btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <noscript>Punjabi Studio needs JavaScript enabled.</noscript>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
